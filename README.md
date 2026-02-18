@@ -4,6 +4,22 @@ A Claude Code plugin that enforces .NET 10 Clean Architecture standards for Lext
 
 ## Installation
 
+**From the marketplace (recommended):**
+
+```bash
+# Add the marketplace
+/plugin marketplace add LEXTECH-AU/L26-Claude-Plugin
+
+# Install the plugin
+/plugin install lextech-dotnet@lextech-plugins
+```
+
+**Direct install from GitHub:**
+
+```bash
+claude plugin add --source github LEXTECH-AU/L26-Claude-Plugin
+```
+
 **From a local directory:**
 
 ```bash
@@ -14,6 +30,24 @@ claude plugin add /path/to/lextech-dotnet
 
 ```bash
 claude --plugin-dir /path/to/lextech-dotnet
+```
+
+**Auto-install for your team** -- add to your project's `.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "lextech-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "LEXTECH-AU/L26-Claude-Plugin"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "lextech-dotnet@lextech-plugins": true
+  }
+}
 ```
 
 Once installed, the plugin's `CLAUDE.md` is loaded automatically into every session, replacing the need for per-project `CLAUDE.md` files for .NET standards. Project-specific instructions can still be layered on top.
