@@ -1,0 +1,57 @@
+{
+  "description": "Lextech .NET standards enforcement hooks",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/coding_standards_hook.py",
+            "timeout": 15
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/sql_format_hook.py",
+            "timeout": 15
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/layer_dependency_hook.py",
+            "timeout": 15
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/serilog_enforcer_hook.py",
+            "timeout": 15
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/openapi_contract_hook.py",
+            "timeout": 15
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      }
+    ]
+  }
+}
