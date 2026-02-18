@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "lextech-dotnet",
-      "source": ".",
+      "source": "./",
       "description": "Lextech .NET 10 Clean Architecture microservice standards. 4 agents, 8 commands, 9 skills, and standards enforcement hooks for Vertical Slice, Contract-First OpenAPI, Dapper/PostgreSQL, Wolverine CQRS, and Azure services.",
       "version": "1.0.0",
       "author": {
