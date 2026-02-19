@@ -32,6 +32,5 @@
     "./agents/lixi-validator.md",
     "./agents/sql-reviewer.md",
     "./agents/test-coverage-reviewer.md"
-  ],
-  "hooks": "./hooks/hooks.json"
+  ]
 }
