@@ -9,17 +9,57 @@ This skill documents the patterns, conventions, and templates used to provision 
 
 ## Repository Overview
 
-The infra repo is a **Terragrunt-based layered platform** managing Azure AKS infrastructure across three environments (dev, staging, prod) plus a shared layer. It uses a modular architecture where each microservice gets its own Terraform state via `modules/service/combined`.
+The infra repo is a **Terragrunt-based layered platform** managing Azure AKS infrastructure. Currently only the **dev** environment and a **shared** layer are deployed. Staging and prod environments will be added later as the platform matures. Each microservice gets its own Terraform state via `modules/service/combined`.
+
+### Repository Structure
+
+```
+environments/
+  services.yaml           # Single source of truth for all service configs
+  _service.hcl            # Shared Terragrunt include (auto-wires 31+ variables)
+  _env.hcl, _foundation.hcl, _data.hcl, _compute.hcl, _gateway.hcl
+  dev/
+    env.hcl, region.hcl, terraform.tfvars
+    foundation/, shared/, data/, compute/, gateway/  # Platform layers
+    services/
+      _template/           # Template files for new services
+      property-service/    # Reference implementation
+      hub-service/
+      skeleton-service/
+  shared/
+    acr/                   # Shared container registry
+    github-actions-identity/
+modules/
+  service/
+    combined/              # Main service module (shim -> data + app)
+    data/                  # Persistent resources (RG, KV, DB, Storage)
+    app/                   # Ephemeral resources (Identity, APIM, ArgoCD, K8s)
+apps/
+  microservices/
+    applicationset.yaml    # ArgoCD ApplicationSets for service discovery
+charts/
+  archetypes/api-service/  # Base Helm chart archetype
+  overlays/dev/            # Dev environment value overrides
+.github/workflows/
+  deploy.yml               # Unified deploy (terragrunt run-all)
+  plan.yml                 # PR plan + comment
+  validate.yml             # PR lint, security scan, Helm validation
+  test.yml                 # Terratest suite
+  drift-detect.yml         # Weekly drift detection
+```
 
 ## Adding a New Service -- Required Steps
 
-1. Add entry to `environments/services.yaml` with `create_argocd_application: true`
-2. Copy `environments/{env}/services/_template/` to `environments/{env}/services/{service-name}/` for dev, staging, and prod
-3. Replace placeholders in `terragrunt.hcl`, set `create_argocd_application = true`
-4. Delete `argocd-app.yaml` from copied template directories (ArgoCD app is Terraform-managed)
-5. Add `services/{service-name}` to `.github/workflows/deploy.yml` layer choices
-6. PR to main -- CI auto-runs validate + plan
-7. Merge -- auto-deploys to dev, Terraform creates ArgoCD Application with real values
+1. Add entry to `environments/services.yaml` with `create_argocd_application: false`
+2. Copy `terragrunt.hcl` and `argocd-app.yaml` from `environments/dev/services/_template/` (do NOT use `cp -r`)
+3. Replace `__SERVICE_NAME__` in both files, `__SERVICE_REPO__` and `__SERVICE_DISPLAY_NAME__` in terragrunt.hcl
+4. Uncomment feature flags in terragrunt.hcl that differ from `_service.hcl` defaults
+5. Create `image-updater.yaml` for auto-deploy on image push
+6. Add `services/{service-name}` to `.github/workflows/deploy.yml` options list
+7. PR to main -- CI auto-runs validate + plan
+8. Merge -- auto-deploys to dev via `terragrunt run-all apply`
+9. CI post-apply step auto-replaces `argocd-app.yaml` placeholders with real Terraform outputs
+10. `microservices-infra-repo` ApplicationSet discovers the service, ArgoCD syncs
 
 ## Service Registry (`environments/services.yaml`)
 
@@ -33,10 +73,11 @@ services:
     create_service_bus_queue: false
     create_storage_account: false
     create_apim_api: true
-    create_app_registration: false
+    create_app_registration: true
     create_helm_values_configmap: true
-    create_argocd_application: true
+    create_argocd_application: false    # GitOps: managed via argocd-app.yaml
     jwt_validation_enabled: false
+    create_client_secret: true
     sync_to_github: true
 
     # APIM
@@ -61,20 +102,30 @@ services:
     argocd_auto_sync: true
 ```
 
+### Existing Services
+
+| Service | Database | Queue | Storage | APIM | App Reg | Client Secret |
+|---------|----------|-------|---------|------|---------|---------------|
+| property-service | Yes | Yes | Yes | Yes | Yes | No (in yaml) |
+| hub-service | Yes | Yes | Yes | Yes | Yes | Yes |
+| skeleton-service | Yes | No | No | Yes | Yes | Yes |
+
 ## Feature Flags Reference
 
-| Flag | Default | Creates |
-|------|---------|---------|
-| `create_database` | false | PostgreSQL database on shared Flexible Server + AD admin |
-| `create_service_bus_queue` | false | Service Bus queue + dead letter queue |
-| `create_storage_account` | false | Storage account + blob containers |
-| `create_apim_api` | true | APIM API + named backend + JWT policies |
-| `create_app_registration` | false | Azure AD app registration + service principal |
-| `create_helm_values_configmap` | true | K8s ConfigMap with Helm values |
-| `create_argocd_application` | true | ArgoCD Application via Terraform (uses real values) |
-| `jwt_validation_enabled` | false | JWT validation policy on APIM |
-| `sync_to_github` | true | Sync secrets/variables to GitHub repo environments |
-| `create_client_secret` | false | Client secret for app registration (k6 testing) |
+| Flag | Module Default | `_service.hcl` Override | Creates |
+|------|---------------|------------------------|---------|
+| `create_database` | true | -- | PostgreSQL database on shared Flexible Server + AD admin |
+| `create_service_bus_queue` | false | -- | Service Bus queue + dead letter queue |
+| `create_storage_account` | false | -- | Storage account + blob containers |
+| `create_apim_api` | false | **true** | APIM API + named backend + JWT policies |
+| `create_app_registration` | false | **true** | Azure AD app registration + service principal |
+| `create_helm_values_configmap` | false | -- | K8s ConfigMap with Helm values |
+| `create_argocd_application` | false | -- | ArgoCD Application via Terraform (NOT used -- prefer GitOps) |
+| `jwt_validation_enabled` | false | -- | JWT validation policy on APIM |
+| `sync_to_github` | false | -- | Sync secrets/variables to GitHub repo environments |
+| `create_client_secret` | false | **true** | Client secret for app registration (k6 testing) |
+
+**Important**: The `_service.hcl` file overrides three defaults for ALL services: `create_apim_api=true`, `create_app_registration=true`, `create_client_secret=true`. You only need to explicitly set flags in `terragrunt.hcl` that differ from these effective defaults.
 
 ## Always-Created Resources (per service)
 
@@ -83,18 +134,178 @@ services:
 - User-Assigned Managed Identity: `{prefix}-{service}-id`
 - Federated Identity Credential (K8s SA <-> Azure identity)
 - Application Insights: `{prefix}-{service}-ai`
+- ClusterSecretStore (External Secrets Operator)
 - Private DNS A Record: `{service}.{dns_zone}`
+- K8s Namespace with ResourceQuota, LimitRange, NetworkPolicy
 - RBAC: Key Vault Secrets User, Certificate User, Administrator, AcrPull
 
-## Template Placeholders
+## Template Files
 
-The templates in `environments/{env}/services/_template/` use these placeholders in `terragrunt.hcl`:
+The `environments/dev/services/_template/` directory contains:
+
+| File | Copy? | Purpose |
+|------|-------|---------|
+| `terragrunt.hcl` | **Yes** | Main Terragrunt configuration |
+| `argocd-app.yaml` | **Yes** | ArgoCD Application manifest (GitOps) |
+| `image-updater.yaml` | **Create manually** | ArgoCD Image Updater (not in template) |
+| `README.md` | No | Template usage docs (delete if copied) |
+| `*.tmpl` files | No | Legacy files for unused `create-service.sh` script |
+
+### Placeholders in `terragrunt.hcl`
 
 | Placeholder | Example Value | Description |
 |-------------|---------------|-------------|
 | `__SERVICE_NAME__` | `order-service` | Lowercase with hyphens |
 | `__SERVICE_REPO__` | `OrderService` | GitHub repository name (PascalCase) |
-| `__SERVICE_DISPLAY_NAME__` | `Order Service` | Human-readable name for APIM |
+| `__SERVICE_DISPLAY_NAME__` | `Order Service` | Human-readable name for APIM `api_display_name` |
+
+### Placeholders in `argocd-app.yaml`
+
+| Placeholder | Replaced By | When |
+|-------------|-------------|------|
+| `__SERVICE_NAME__` | You (manually) | Before committing |
+| `__CLIENT_ID__` | CI post-apply step | After `terragrunt apply` |
+| `__ACR_SERVER__` | CI post-apply step | After `terragrunt apply` |
+| `__INGRESS_HOST__` | CI post-apply step | After `terragrunt apply` |
+| `__APIM_IP__` | CI post-apply step | After `terragrunt apply` |
+| `__ESO_STORE__` | CI post-apply step | After `terragrunt apply` |
+
+Only `__SERVICE_NAME__` needs manual replacement. The CI deploy workflow (`deploy.yml`) has a "Post-apply: Update ArgoCD manifests with Terraform outputs" step that automatically replaces the remaining placeholders with real values and pushes a commit.
+
+## `_service.hcl` Auto-Wired Variables
+
+The `_service.hcl` file eliminates ~70% of boilerplate by auto-wiring these from platform layer dependencies. Services never need to set these:
+
+| Category | Variables Auto-Wired |
+|----------|---------------------|
+| Identity | `name_prefix`, `environment`, `location`, `tags` |
+| Networking | `vnet_id`, `private_endpoints_subnet_id`, `enable_private_endpoints`, `keyvault_private_dns_zone_id` |
+| Monitoring | `log_analytics_workspace_id` |
+| Kubernetes | `aks_oidc_issuer_url`, `eso_identity_principal_id` |
+| Container Registry | `acr_id`, `acr_login_server` |
+| Ingress | `internal_dns_zone_name`, `internal_dns_zone_resource_group`, `internal_ingress_ip`, `ingress_allowed_ips` |
+| APIM | `apim_id`, `apim_name`, `apim_resource_group_name`, `apim_gateway_url`, `apim_subnet_prefix` |
+| Data Layer | `postgresql_server_id/fqdn/name`, `postgresql_resource_group`, `postgresql_admin_login/password`, `service_bus_namespace_id`, `service_bus_connection_string`, `service_bus_namespace` |
+| GitHub | `github_actions_client_id`, `github_actions_object_id` |
+| Testing | `k6_cloud_token` |
+| Azure AD | `azuread_allowed_tenants` |
+
+### Feature Flag Defaults Set by `_service.hcl`
+
+```hcl
+create_apim_api         = true
+create_app_registration = true
+create_client_secret    = true
+```
+
+These are merged with the child service's inputs. Only override in your `terragrunt.hcl` if you need a different value.
+
+## Terragrunt Template Structure
+
+Each service's `terragrunt.hcl` uses two includes:
+- `include "root"` -- pulls in the root `terragrunt.hcl` (providers, backend, global inputs)
+- `include "service"` -- pulls in `_service.hcl` (shared wiring for dependencies, providers, module source)
+
+A minimal service `terragrunt.hcl` only needs:
+```hcl
+include "root" {
+  path = find_in_parent_folders()
+}
+
+include "service" {
+  path           = find_in_parent_folders("_service.hcl")
+  merge_strategy = "deep"
+  expose         = true
+}
+
+locals {
+  service_name = "my-service"
+  env_vars     = include.service.locals.env_vars
+}
+
+inputs = {
+  service_name      = local.service_name
+  github_repository = "MyService"
+  api_path          = "my-service"
+  tags = merge(local.env_vars.tags, {
+    Service = local.service_name
+  })
+
+  # Uncomment flags that differ from _service.hcl defaults:
+  # create_database         = true
+  # create_service_bus_queue = true
+}
+```
+
+## ArgoCD Application Pattern
+
+ArgoCD Applications are **GitOps-managed** via `argocd-app.yaml` files in each service directory. The `microservices-infra-repo` ApplicationSet auto-discovers these files:
+
+```yaml
+# ApplicationSet generator (in apps/microservices/applicationset.yaml)
+generators:
+  - git:
+      repoURL: https://github.com/LEXTECH-AU/Lextech_Microservice_Infra.git
+      revision: main
+      directories:
+        - path: 'environments/dev/services/*'
+        - path: 'environments/dev/services/_template'
+          exclude: true
+```
+
+### How It Works
+
+1. Service dir has `argocd-app.yaml` with `__PLACEHOLDER__` values
+2. PR merged -> CI runs `terragrunt apply` -> creates Azure resources
+3. CI post-apply step reads Terraform outputs and replaces placeholders:
+   - `__CLIENT_ID__` -> Managed Identity client ID
+   - `__ACR_SERVER__` -> `lextechsharedacr.azurecr.io`
+   - `__INGRESS_HOST__` -> `{service}.lextech-dev-aue.internal`
+   - `__APIM_IP__` -> APIM outbound IP
+   - `__ESO_STORE__` -> `azure-keyvault-{service-name}`
+4. CI commits the updated `argocd-app.yaml`
+5. ApplicationSet discovers it and creates the ArgoCD Application
+6. ArgoCD Image Updater watches for new images and triggers syncs
+
+### Multi-Source Helm Architecture
+
+ArgoCD apps use multi-source Helm with up to three sources:
+1. **Archetype chart** from `charts/archetypes/api-service` in the infra repo
+2. **Service-specific values** from the service's own repo (`helm/values.yaml`) -- optional, Pattern B only
+3. **Environment overlay** from `charts/overlays/{env}/values.yaml` in the infra repo
+
+**Pattern A (Platform-only)**: Service has no Helm chart. All values from archetype + overlay + inline parameters. This is the default.
+
+**Pattern B (External repo)**: Service has its own `helm/` directory with `values.yaml`. Uncomment the `$service` ref source in `argocd-app.yaml`.
+
+### ArgoCD Image Updater
+
+Each service needs an `image-updater.yaml` that watches the ArgoCD Application for image changes:
+
+```yaml
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: {service-name}-dev
+  namespace: argocd
+spec:
+  namespace: argocd
+  writeBackConfig:
+    method: argocd
+  applicationRefs:
+    - namePattern: {service-name}-dev
+      images:
+        - alias: svc
+          imageName: lextechsharedacr.azurecr.io/{service-name}:develop
+          commonUpdateSettings:
+            updateStrategy: digest
+          manifestTargets:
+            helm:
+              name: image.repository
+              tag: image.tag
+```
+
+> **Note**: The Terraform module also supports `create_argocd_application = true` which creates the ArgoCD Application directly via `kubectl_manifest` with real values at apply time. This avoids the placeholder chicken-and-egg problem but is NOT currently used by any deployed service. All existing services use the GitOps pattern.
 
 ## Naming Conventions
 
@@ -109,10 +320,13 @@ The templates in `environments/{env}/services/_template/` use these placeholders
 | K8s Namespace | `{service-name}` | `property-service` |
 | Service Account | `{service}-sa` | `property-service-sa` |
 | DNS | `{service}.{prefix}.internal` | `property-service.lextech-dev-aue.internal` |
+| ESO Store | `azure-keyvault-{service-name}` | `azure-keyvault-property-service` |
 
 ## Environment Differences
 
-| Setting | Dev | Staging | Prod |
+Currently only **dev** is deployed for services. Staging and prod will be added later.
+
+| Setting | Dev | Staging (planned) | Prod (planned) |
 |---------|-----|---------|------|
 | AKS Private | No | No | Yes |
 | AKS Nodes | 1-3 | 2-5 | 3-20 (AZ) |
@@ -127,13 +341,31 @@ The templates in `environments/{env}/services/_template/` use these placeholders
 
 ## CI/CD Pipeline Behavior
 
+### Workflows
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `deploy.yml` | Push to main, workflow_dispatch | Unified deploy via `terragrunt run-all` with `--terragrunt-strict-include` |
+| `plan.yml` | PR to main | Runs `terragrunt plan` per changed env/layer, posts PR summary comment |
+| `validate.yml` | PR to main | TFLint, `terraform fmt`, Trivy security scan, Helm lint, kubeconform, OPA policies |
+| `test.yml` | PR, push to main, weekly | Terratest suite (unit, component, integration, e2e) |
+| `drift-detect.yml` | Weekly (Sunday 6am UTC) | Detects drift in infrastructure layers |
+
+### Deploy Workflow Details
+
+The `deploy.yml` workflow uses **filesystem auto-discovery** for services:
+- On push to main: detects changed files, iterates `environments/${ENV}/services/*/` to find services with `terragrunt.hcl`
+- On workflow_dispatch: uses the selected layer from the dropdown, or discovers all services when `layer=all`
+- Services are deployed via `terragrunt run-all apply --terragrunt-strict-include` with dynamic `--include-dir` flags
+- After apply, a post-apply step scans service `argocd-app.yaml` files for remaining placeholders and replaces them with Terraform outputs
+
+### Pipeline Events
+
 | Event | Action |
 |-------|--------|
 | PR to main | Validate (lint, security scan, Helm lint, K8s validation) + Plan (per affected env/layer) |
-| Merge to main | Auto-deploy changed layers to dev |
-| workflow_dispatch | Manual deploy to staging/prod with approval |
-
-The CI posts automated "Infrastructure Plan Summary" comments on PRs showing which env/layer combos will change.
+| Merge to main | Auto-deploy changed layers to dev via `terragrunt run-all apply` |
+| workflow_dispatch | Manual deploy to any environment with layer selection |
 
 ## Key Vault Secrets (Auto-populated by Terraform)
 
@@ -153,36 +385,35 @@ The CI posts automated "Infrastructure Plan Summary" comments on PRs showing whi
 
 **Secrets**: `K6_CLOUD_TOKEN`, `K6_AZURE_CLIENT_SECRET`
 
-## Terragrunt Template Structure
+## Advanced Module Variables
 
-Each service's `terragrunt.hcl` uses two includes:
-- `include "root"` -- pulls in the root `terragrunt.hcl` (providers, backend, global inputs)
-- `include "service"` -- pulls in `_service.hcl` (shared wiring for dependencies, providers, module source)
+These variables have sensible defaults but can be overridden in `terragrunt.hcl` for advanced use cases:
 
-The `_service.hcl` eliminates ~70% of boilerplate by auto-wiring dependencies on foundation, shared ACR, data, compute, gateway, and GitHub actions identity layers.
+### Service Bus Tuning
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `service_bus_queue_max_delivery_count` | 10 | Max delivery attempts before dead-letter |
+| `service_bus_queue_max_size_mb` | 1024 | Queue size limit |
+| `service_bus_queue_message_ttl` | `P14D` | Message time-to-live |
+| `service_bus_queue_lock_duration` | `PT1M` | Message lock duration |
 
-## ArgoCD Application Pattern
+### Namespace Hardening (enabled by default)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `enable_resource_quota` | true | K8s ResourceQuota on namespace |
+| `enable_limit_range` | true | K8s LimitRange on namespace |
+| `enable_network_policies` | true | K8s NetworkPolicy (zero-trust) |
 
-ArgoCD Applications are **Terraform-managed** via the `create_argocd_application = true` flag. The Terraform module (`modules/service/app/main.tf`) creates the ArgoCD Application using `kubectl_manifest` with real values resolved at apply time:
+Override `resource_quota` or `limit_range` objects if the service needs more than the default limits (e.g., more than 20 pods or 2 CPU).
 
-- **Managed Identity Client ID** -- from the identity module output
-- **ACR Server** -- from the shared ACR dependency
-- **Ingress Host** -- computed from service name and DNS zone
-- **APIM IP** -- from the gateway dependency
-
-This avoids the placeholder chicken-and-egg problem where `argocd-app.yaml` files with placeholders like `__INGRESS_HOST__` get auto-discovered by the `services-root` app-of-apps and fail to sync (e.g., `__INGRESS_HOST__` is not a valid RFC 1123 hostname).
-
-ArgoCD apps use multi-source Helm with three sources:
-1. **Archetype chart** from `charts/archetypes/api-service` in the infra repo
-2. **Service-specific values** from the service's own repo (`helm/values.yaml`)
-3. **Environment overlay** from `charts/overlays/{env}/values.yaml` in the infra repo
-
-For **dev**, `argocd_auto_sync = true` enables automatic sync. For **staging** and **prod**, `argocd_auto_sync = false` requires manual sync approval.
-
-> **Note**: Migration to GitOps-managed `argocd-app.yaml` files is possible later once the initial Terraform apply has populated all values and the service is running. This is optional and not required for initial provisioning.
+### App Registration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `sign_in_audience` | `AzureADMultipleOrgs` | Azure AD sign-in audience |
+| `create_app_role` | true | Create app role on registration |
 
 ## PR Conventions
 
 - **Title**: `feat: Add {service-name} infrastructure`
-- **Body**: Summary bullets, architecture notes, test plan checklist
+- **Body**: Summary bullets, service configuration table, files changed, post-merge steps, test plan
 - **Footer**: `Generated with [Claude Code](https://claude.com/claude-code)`
