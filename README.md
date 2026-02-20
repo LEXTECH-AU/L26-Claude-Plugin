@@ -94,7 +94,7 @@ Commands are invoked with `/lextech-dotnet:<command-name>` followed by arguments
 | `add-endpoint` | Add a Minimal API endpoint for an existing command or query, mapped to the OpenAPI contract | `/lextech-dotnet:add-endpoint GetCompanySearchByIdQuery` |
 | `new-migration` | Create a new pgschema SQL migration file with header template | `/lextech-dotnet:new-migration AddCompanySearchTable` |
 | `new-sql` | Create an embedded SQL file with proper header, parameter docs, and parameterized queries | `/lextech-dotnet:new-sql MatterCompanySearch insert` |
-| `infra-provision` | Provision infrastructure for a new microservice by creating a PR in the Lextech_Microservice_Infra repo | `/lextech-dotnet:infra-provision order-service OrderService` |
+| `new-service` | Create a new microservice from the skeleton template, create GitHub repo, and provision Azure infrastructure | `/lextech-dotnet:new-service order-service OrderService` |
 
 ## Agents
 

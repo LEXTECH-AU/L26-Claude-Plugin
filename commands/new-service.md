@@ -1,12 +1,12 @@
 ---
-name: infra-provision
-description: Provision infrastructure for a new microservice by creating a PR in the Lextech_Microservice_Infra repo
+name: new-service
+description: Create a new microservice from the skeleton template, create GitHub repo, and provision Azure infrastructure
 argument-hint: "[service-name] [GitHubRepoName]"
 ---
 
-# Provision Infrastructure for a New Microservice
+# Create a New Microservice
 
-You are provisioning Azure infrastructure for a new Lextech microservice by creating a PR in the `LEXTECH-AU/Lextech_Microservice_Infra` repository. Follow every step precisely.
+You are creating a complete new Lextech microservice end-to-end: cloning the skeleton, renaming everything, creating the GitHub repo, and provisioning Azure infrastructure. Follow every step precisely.
 
 ## Step 1: Parse Arguments
 
@@ -18,8 +18,10 @@ Parse the arguments provided by the user. Expect up to two positional arguments:
 If service-name is missing, ask the user interactively. Confirm both values before proceeding.
 
 Derive these additional values:
-- **service_display_name**: Human-readable name with spaces (e.g., `Order Service`)
-- **db_name**: Service name with hyphens replaced by underscores (e.g., `order_service`)
+- **PascalName**: Same as GitHubRepoName (e.g., `OrderService`) -- used for namespace prefix (`OrderService.Api`)
+- **kebab_name**: Same as service-name (e.g., `order-service`) -- used for Docker image, Helm, APIM
+- **db_name**: Service name with hyphens replaced by underscores (e.g., `order_service`) -- PostgreSQL database name
+- **display_name**: Human-readable name with spaces (e.g., `Order Service`)
 
 ## Step 2: Select Azure Services
 
@@ -41,16 +43,111 @@ If **Webhooks** are needed, ask for the allowed IP addresses (comma-separated). 
 
 Confirm the full configuration with the user before proceeding.
 
-## Step 3: Load the Infra-Provisioning Skill
-
-Read the `infra-provisioning` skill to load the naming conventions, template structure, feature flags reference, and environment differences. Use this as your reference for all subsequent steps.
-
-## Step 4: Clone the Infra Repo
+## Step 3: Clone Skeleton from GitHub
 
 ```bash
-# Create a temporary working directory
 WORK_DIR=$(mktemp -d)
 cd "$WORK_DIR"
+gh repo clone LEXTECH-AU/L26-Skeleton-Microservice -- --depth=1
+mv L26-Skeleton-Microservice {GitHubRepoName}
+cd {GitHubRepoName}
+rm -rf .git
+```
+
+Verify the clone succeeded and the directory was renamed.
+
+## Step 4: Strip Skeleton-Specific Files
+
+Remove files that are skeleton-specific and shouldn't carry over to the new service:
+
+```bash
+rm -rf plans/ CONTEXT.md .claude/
+```
+
+## Step 5: Rename -- Directories
+
+Rename all project directories from `L26SkeletonMicroservice.*` to `{PascalName}.*`:
+
+```bash
+# src/ directories
+mv src/L26SkeletonMicroservice.Api src/{PascalName}.Api
+mv src/L26SkeletonMicroservice.Application src/{PascalName}.Application
+mv src/L26SkeletonMicroservice.Domain src/{PascalName}.Domain
+mv src/L26SkeletonMicroservice.Infrastructure src/{PascalName}.Infrastructure
+
+# test/ directories
+mv tests/L26SkeletonMicroservice.UnitTests tests/{PascalName}.UnitTests
+mv tests/L26SkeletonMicroservice.IntegrationTests tests/{PascalName}.IntegrationTests
+```
+
+## Step 6: Rename -- File Contents (Global Find-Replace)
+
+Four sequential replacements across ALL files (respecting case):
+
+1. `L26SkeletonMicroservice` -> `{PascalName}` (namespaces, project refs, assembly names -- ~219 occurrences)
+2. `l26-skeleton-microservice` -> `{kebab_name}` (Docker image name in CI and Helm -- ~3 occurrences)
+3. `skeleton-service` -> `{kebab_name}` (APIM, Helm SA, pod annotations -- ~6 occurrences)
+4. `SkeletonService` -> `{PascalName}` (OpenTelemetry serviceName in Helm -- ~1 occurrence)
+
+Files to process: `.sln`, `.csproj`, `.cs`, `.json`, `.yaml`, `.yml`, `Dockerfile` -- skip `.git/`, `bin/`, `obj/`.
+
+Also rename the `.csproj` files themselves (they're inside the already-renamed directories but the filenames need updating too):
+
+```bash
+# Each .csproj file: mv L26SkeletonMicroservice.{Layer}.csproj {PascalName}.{Layer}.csproj
+```
+
+## Step 7: Generate New GUIDs for Solution
+
+Replace the project GUIDs in `src/src.sln` with freshly generated GUIDs so the new solution doesn't collide with the skeleton.
+
+## Step 8: Update UserSecretsId
+
+In `{PascalName}.Api.csproj`, replace the `UserSecretsId` value `l26-skeleton-microservice-api` with `{kebab_name}-api`.
+
+## Step 9: Build Verification
+
+```bash
+dotnet restore src/src.sln
+dotnet build src/src.sln --no-restore
+```
+
+If the build fails, report the errors and stop. The user needs to fix before continuing.
+
+## Step 10: Create GitHub Repo and Push
+
+```bash
+gh repo create LEXTECH-AU/{GitHubRepoName} --private --source=. --push
+```
+
+Set `develop` as the default branch and push initial code to both `main` and `develop`:
+
+```bash
+git init
+git add -A
+git commit -m "feat: Initial scaffold from L26-Skeleton-Microservice
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+git branch -M main
+gh repo create LEXTECH-AU/{GitHubRepoName} --private --source=. --push
+git checkout -b develop
+git push -u origin develop
+gh repo edit LEXTECH-AU/{GitHubRepoName} --default-branch develop
+```
+
+## Step 11: Provision Infrastructure
+
+Now provision the Azure infrastructure by creating a PR in the infra repo. This uses the Azure service selections from Step 2.
+
+### 11a. Load the Infra-Provisioning Skill
+
+Read the `infra-provisioning` skill to load the naming conventions, template structure, feature flags reference, and environment differences. Use this as your reference for all subsequent sub-steps.
+
+### 11b. Clone the Infra Repo
+
+```bash
+INFRA_DIR=$(mktemp -d)
+cd "$INFRA_DIR"
 
 # Clone the infra repo (shallow clone for speed)
 gh repo clone LEXTECH-AU/Lextech_Microservice_Infra -- --depth=1
@@ -62,7 +159,7 @@ git checkout -b feat/add-{service-name}-infra
 
 Verify the clone succeeded and the branch was created.
 
-## Step 5: Add Service Entry to services.yaml
+### 11c. Add Service Entry to services.yaml
 
 Edit `environments/services.yaml` to add the new service entry. Place it after the last existing service entry (before any commented-out templates/placeholders).
 
@@ -104,11 +201,11 @@ Add a section header comment and the full service configuration using the featur
 If storage containers were specified, uncomment and populate the `storage_containers` list.
 If webhook IPs were specified, add and populate the `webhook_allowed_ips` list.
 
-## Step 6: Create Dev Service Directory
+### 11d. Create Dev Service Directory
 
 Only create the **dev** environment configuration. Staging and prod environments do not exist yet in the repo and are promoted separately later.
 
-### 6a. Copy Template Files
+#### Copy Template Files
 
 Copy only the two required files from the template directory (do NOT use `cp -r` -- the template directory contains legacy `.tmpl` files that should not be copied):
 
@@ -118,7 +215,7 @@ cp environments/dev/services/_template/terragrunt.hcl environments/dev/services/
 cp environments/dev/services/_template/argocd-app.yaml environments/dev/services/{service-name}/argocd-app.yaml
 ```
 
-### 6b. Configure terragrunt.hcl
+#### Configure terragrunt.hcl
 
 Edit `environments/dev/services/{service-name}/terragrunt.hcl`:
 
@@ -151,7 +248,7 @@ Edit `environments/dev/services/{service-name}/terragrunt.hcl`:
 7. If storage containers were specified, uncomment and populate the `storage_containers` list
 8. If webhook IPs were specified, uncomment and populate the `webhook_allowed_ips` list
 
-### 6c. Configure argocd-app.yaml
+#### Configure argocd-app.yaml
 
 Edit `environments/dev/services/{service-name}/argocd-app.yaml`:
 
@@ -165,7 +262,7 @@ The argocd-app.yaml template supports two patterns (documented in comments):
 
 If the service repo has a `helm/` directory, switch to Pattern B by uncommenting the relevant sections.
 
-### 6d. Create image-updater.yaml
+#### Create image-updater.yaml
 
 Create `environments/dev/services/{service-name}/image-updater.yaml` for ArgoCD Image Updater. This enables automatic deployment when a new container image is pushed to ACR:
 
@@ -199,7 +296,7 @@ spec:
               tag: image.tag
 ```
 
-## Step 7: Update Deploy Workflow
+### 11e. Update Deploy Workflow
 
 Edit `.github/workflows/deploy.yml` to add the new service to the manual dispatch layer choices.
 
@@ -225,9 +322,9 @@ Find the `layer` input under `workflow_dispatch.inputs` and add `services/{servi
           - github-actions-identity
 ```
 
-**Note**: This is the only change needed in the deploy workflow. The workflow uses `terragrunt run-all` with filesystem auto-discovery for push-to-main deploys, so creating the service directory (Step 6) is what enables automatic deployment. The options list is only for manual `workflow_dispatch` deploys.
+**Note**: This is the only change needed in the deploy workflow. The workflow uses `terragrunt run-all` with filesystem auto-discovery for push-to-main deploys, so creating the service directory (Step 11d) is what enables automatic deployment. The options list is only for manual `workflow_dispatch` deploys.
 
-## Step 8: Commit and Push
+### 11f. Commit and Push
 
 Stage all changes, create a commit, and push:
 
@@ -248,7 +345,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 git push -u origin feat/add-{service-name}-infra
 ```
 
-## Step 9: Create Pull Request
+### 11g. Create Pull Request
 
 Create a PR in the infra repo using `gh`:
 
@@ -313,23 +410,31 @@ EOF
 )"
 ```
 
-## Step 10: Verify and Summarize
+### 11h. Clean Up
 
-After the PR is created:
+Remove the temporary infra clone directory:
 
-1. Display the PR URL.
-2. List all files created/modified.
-3. Remind the user of the post-merge workflow:
-   - CI will automatically run validate + plan on the PR
-   - Check the plan summary comment for expected resources
-   - After merge, dev auto-deploys via `terragrunt run-all apply`
-   - CI post-apply step auto-replaces `argocd-app.yaml` placeholders (`__CLIENT_ID__`, `__ACR_SERVER__`, `__INGRESS_HOST__`, `__APIM_IP__`, `__ESO_STORE__`) with real Terraform outputs and pushes a commit
-   - The `microservices-infra-repo` ApplicationSet discovers the service
-   - Push container image to ACR with `develop` tag
-   - ArgoCD Image Updater detects the image and triggers first sync
-   - Verify ArgoCD sync in the dev cluster
-4. Display a summary table of the service configuration.
-5. Remind the user that staging/prod promotion is a separate step done later.
+```bash
+rm -rf "$INFRA_DIR"
+```
+
+## Step 12: Summary and Next Steps
+
+After everything is complete, display:
+
+1. **GitHub repo URL**: `https://github.com/LEXTECH-AU/{GitHubRepoName}`
+2. **Infra PR URL**: The PR created in Step 11g
+3. **Service configuration table**: All the settings from Step 2
+4. **Post-merge checklist**:
+   - [ ] CI validates and plans the infra PR
+   - [ ] Review Terraform plan output
+   - [ ] Merge the infra PR
+   - [ ] Wait for CI deploy to complete
+   - [ ] Verify ArgoCD Application is created
+   - [ ] Push container image to ACR with `develop` tag
+   - [ ] Verify pods are running in dev cluster
+5. **Reminder**: "Run `/lextech-dotnet:new-feature` to scaffold your first feature"
+6. **Note**: Staging/prod promotion is a separate step done later
 
 ## Important Rules
 
@@ -343,4 +448,5 @@ After the PR is created:
 - **Deploy workflow** -- only add to the `options` dropdown list. The workflow auto-discovers services from the filesystem for push-to-main deploys.
 - **services.yaml** is the single source of truth -- the entry here must match the terragrunt.hcl inputs.
 - **Do not run `terragrunt plan` or `terragrunt apply`** -- that happens via CI after the PR is merged.
-- **Clean up**: remove the temporary clone directory after the PR is created.
+- **Clean up**: remove all temporary clone directories after completion.
+- **Build must pass** -- if the build fails in Step 9, stop and let the user fix before continuing.
