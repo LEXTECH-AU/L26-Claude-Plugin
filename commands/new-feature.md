@@ -247,7 +247,7 @@ After creating all files:
    - Generated DTOs match the spec (run `dotnet build` to regenerate).
    - Endpoint `.WithName()` matches the spec's `operationId`.
    - Run `oasdiff` to verify no breaking changes if modifying an existing operation.
-4. Display the 12-step workflow checklist with checkmarks for completed steps and empty boxes for remaining steps.
+4. Display the 13-step workflow checklist with checkmarks for completed steps and empty boxes for remaining steps.
 5. Remind: **Unit tests must pass before proceeding to the next feature.**
 
 ## Important Rules

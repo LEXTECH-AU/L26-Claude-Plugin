@@ -66,7 +66,7 @@ def check_xml_docs(content: str) -> list[str]:
         if re.match(r'^public\s+(sealed\s+)?(partial\s+)?(static\s+)?(class|record|struct|interface|enum)\s+', stripped):
             # Look backwards for XML doc comment
             has_doc = False
-            for j in range(i - 1, max(i - 5, -1), -1):
+            for j in range(i - 1, max(i - 15, -1), -1):
                 prev = lines[j].strip()
                 if prev.startswith("/// <summary>") or prev.startswith("/// <inheritdoc"):
                     has_doc = True
@@ -88,7 +88,7 @@ def check_xml_docs(content: str) -> list[str]:
             if '{' in stripped and 'get;' in stripped:
                 continue
             has_doc = False
-            for j in range(i - 1, max(i - 5, -1), -1):
+            for j in range(i - 1, max(i - 15, -1), -1):
                 prev = lines[j].strip()
                 if prev.startswith("/// <summary>") or prev.startswith("/// <inheritdoc"):
                     has_doc = True

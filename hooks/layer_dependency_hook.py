@@ -51,6 +51,8 @@ API_WARN_PATTERNS = [
     "Persistence",
 ]
 
+INFRASTRUCTURE_FORBIDDEN = ["Api"]
+
 
 def extract_file_and_content(payload: dict) -> tuple[str, str]:
     """Extract the file path and new content from the hook payload."""
@@ -129,6 +131,21 @@ def check_application_layer(usings: list[tuple[int, str]], file_path: str) -> li
     return violations
 
 
+def check_infrastructure_layer(usings: list[tuple[int, str]], file_path: str) -> list[tuple[str, str]]:
+    """Check Infrastructure layer for forbidden dependencies."""
+    violations = []
+    for line_num, namespace in usings:
+        segments = namespace.split(".")
+        if "Api" in segments:
+            violations.append((
+                "BLOCK",
+                f"  Line {line_num}: Infrastructure layer cannot reference "
+                f"'{namespace}'. Infrastructure must not depend on API. "
+                f"Infrastructure may reference Application and Domain only.",
+            ))
+    return violations
+
+
 def check_api_layer(usings: list[tuple[int, str]], file_path: str) -> list[tuple[str, str]]:
     """Check API layer for discouraged dependencies."""
     violations = []
@@ -175,7 +192,8 @@ def main() -> None:
         violations = check_application_layer(usings, file_path)
     elif layer == "Api":
         violations = check_api_layer(usings, file_path)
-    # Infrastructure layer: no outbound checks needed (it can reference Domain)
+    elif layer == "Infrastructure":
+        violations = check_infrastructure_layer(usings, file_path)
 
     if not violations:
         sys.exit(0)

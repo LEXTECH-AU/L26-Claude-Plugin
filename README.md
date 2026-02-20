@@ -59,7 +59,7 @@ The plugin ships a `CLAUDE.md` that injects the full Lextech .NET standards into
 - **Technology stack**: .NET 10, Minimal APIs, Wolverine, Dapper, PostgreSQL, Azure services, Serilog, Grafana Cloud.
 - **Non-negotiable rules**: No `var`, XML docs on public members, `CancellationToken` on async methods, sealed records for commands/queries, parameterized SQL only, structured logging only.
 - **Architecture layers**: Domain (pure) > Application > Infrastructure > API with strict dependency direction.
-- **Feature workflow**: An 11-step mandatory sequence from domain entity through unit/integration tests.
+- **Feature workflow**: A 13-step mandatory sequence from OpenAPI contract through unit/integration tests.
 - **File naming conventions**: Consistent patterns for SQL, commands, queries, handlers, validators, repositories, and endpoints.
 - **Contract-first OpenAPI**: NSwag DTO generation, API versioning, endpoint metadata requirements, and breaking change detection.
 - **Skill reference table**: Directs Claude to load the right skill before writing code in each area.
@@ -92,7 +92,9 @@ Commands are invoked with `/lextech-dotnet:<command-name>` followed by arguments
 | `lixi-lookup` | Search the LIXI DAS Schema for definitions and enums | `/lextech-dotnet:lixi-lookup PropertyAddress` |
 | `lixi-codegen` | Generate C# sealed records from LIXI DAS Schema definitions | `/lextech-dotnet:lixi-codegen ValuationReport` |
 | `add-endpoint` | Add a Minimal API endpoint for an existing command or query, mapped to the OpenAPI contract | `/lextech-dotnet:add-endpoint GetCompanySearchByIdQuery` |
-| `add-migration` | Create a new pgschema SQL migration file with header template | `/lextech-dotnet:add-migration AddCompanySearchTable` |
+| `new-migration` | Create a new pgschema SQL migration file with header template | `/lextech-dotnet:new-migration AddCompanySearchTable` |
+| `new-sql` | Create an embedded SQL file with proper header, parameter docs, and parameterized queries | `/lextech-dotnet:new-sql MatterCompanySearch insert` |
+| `infra-provision` | Provision infrastructure for a new microservice by creating a PR in the Lextech_Microservice_Infra repo | `/lextech-dotnet:infra-provision order-service OrderService` |
 
 ## Agents
 

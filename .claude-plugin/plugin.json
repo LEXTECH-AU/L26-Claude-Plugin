@@ -1,7 +1,7 @@
 {
   "name": "lextech-dotnet",
   "version": "1.0.0",
-  "description": "Lextech .NET 10 Clean Architecture microservice standards. 4 agents, 8 commands, 9 skills, and standards enforcement hooks for Vertical Slice, Contract-First OpenAPI, Dapper/PostgreSQL, Wolverine CQRS, and Azure services.",
+  "description": "Lextech .NET 10 Clean Architecture microservice standards. 4 agents, 9 commands, 10 skills, and standards enforcement hooks for Vertical Slice, Contract-First OpenAPI, Dapper/PostgreSQL, Wolverine CQRS, and Azure services.",
   "author": {
     "name": "Lextech",
     "url": "https://github.com/LEXTECH-AU"
@@ -32,5 +32,17 @@
     "./agents/lixi-validator.md",
     "./agents/sql-reviewer.md",
     "./agents/test-coverage-reviewer.md"
+  ],
+  "skills": [
+    "./skills/vertical-slice/SKILL.md",
+    "./skills/dapper-postgresql/SKILL.md",
+    "./skills/wolverine-cqrs/SKILL.md",
+    "./skills/openapi-contract-first/SKILL.md",
+    "./skills/azure-integration/SKILL.md",
+    "./skills/observability/SKILL.md",
+    "./skills/testing-patterns/SKILL.md",
+    "./skills/security-owasp/SKILL.md",
+    "./skills/lixi-das-schema/SKILL.md",
+    "./skills/infra-provisioning/SKILL.md"
   ]
 }

@@ -7,21 +7,23 @@ description: "Vertical Slice feature development patterns for .NET 10 Clean Arch
 
 This skill defines the mandatory workflow, folder structure, and code templates for building features in Lextech .NET 10 Clean Architecture microservices. Every new feature follows a vertical slice approach: all layers (API, Application, Infrastructure) are built together for a single use case.
 
-## Mandatory 11-Step Feature Workflow
+## Mandatory 13-Step Feature Workflow
 
 Follow these steps in order for every new feature. Do not skip steps.
 
-1. **Define the Command or Query** -- Create a sealed record in the Application layer.
-2. **Create the FluentValidation Validator** -- Validate all inputs before the handler runs.
-3. **Write the SQL File** -- Embedded `.sql` resource for the database operation. See `/lextech-dotnet:dapper-postgresql`.
-4. **Create or Update the Repository Interface** -- Define the contract in the Application layer.
-5. **Implement the Repository** -- Dapper-based implementation in the Infrastructure layer.
-6. **Register the Repository in Unit of Work** -- Add lazy property to `UnitOfWork`.
-7. **Create the Handler** -- Wolverine handler with `HandleAsync`. See `/lextech-dotnet:wolverine-cqrs`.
-8. **Create the Mapster Mapping Profile** -- Map between domain entities and DTOs/commands.
-9. **Create the Minimal API Endpoint** -- Wire the HTTP route to the message bus.
-10. **Write Unit Tests** -- Handler and validator tests. See `/lextech-dotnet:testing-patterns`.
-11. **Write Integration Tests** -- End-to-end test against the real database.
+1. **Define/Update the OpenAPI Operation** -- Add or update the operation in the OpenAPI spec file. See `/lextech-dotnet:openapi-contract-first`.
+2. **Generate DTOs from the Spec** -- Run `dotnet build` to trigger NSwag pre-build DTO generation.
+3. **Define the Command or Query** -- Create a sealed record in the Application layer.
+4. **Create the FluentValidation Validator** -- Validate all inputs before the handler runs.
+5. **Write the SQL File** -- Embedded `.sql` resource for the database operation. See `/lextech-dotnet:dapper-postgresql`.
+6. **Create or Update the Repository Interface** -- Define the contract in the Application layer.
+7. **Implement the Repository** -- Dapper-based implementation in the Infrastructure layer.
+8. **Register the Repository in Unit of Work** -- Add lazy property to `UnitOfWork`.
+9. **Create the Handler** -- Wolverine handler with `HandleAsync`. See `/lextech-dotnet:wolverine-cqrs`.
+10. **Create the Mapster Mapping Profile** -- Map between domain entities and DTOs/commands.
+11. **Create the Minimal API Endpoint** -- Wire the HTTP route to the message bus.
+12. **Write Unit Tests** -- Handler and validator tests. See `/lextech-dotnet:testing-patterns`.
+13. **Write Integration Tests** -- End-to-end test against the real database.
 
 ## Folder Structure Per Layer
 

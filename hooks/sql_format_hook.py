@@ -123,41 +123,53 @@ def check_string_concatenation(content: str) -> list[str]:
 def check_non_parameterized_where(content: str) -> list[str]:
     """Detect hardcoded literal values in WHERE clauses instead of parameters."""
     blockers = []
-    in_where = False
+    paren_depth = 0
+    in_where_at_depth = {}  # track WHERE state per nesting depth
+
     for i, line in enumerate(content.splitlines(), start=1):
         stripped = line.strip().upper()
-        # Skip comments
         if stripped.startswith("--") or stripped.startswith("/*") or stripped.startswith("*"):
             continue
 
+        # Track parenthesis nesting
+        paren_depth += stripped.count("(") - stripped.count(")")
+
         if "WHERE" in stripped:
-            in_where = True
+            in_where_at_depth[paren_depth] = True
+
+        in_where = in_where_at_depth.get(paren_depth, False)
 
         if in_where:
-            # End of WHERE clause heuristic
-            if any(kw in stripped for kw in ["ORDER BY", "GROUP BY", "HAVING", "LIMIT", "OFFSET", "UNION", "INSERT", "UPDATE", "DELETE"]):
-                in_where = False
+            if any(kw in stripped for kw in [
+                "ORDER BY", "GROUP BY", "HAVING", "LIMIT",
+                "OFFSET", "UNION", "INSERT", "UPDATE", "DELETE"
+            ]):
+                in_where_at_depth[paren_depth] = False
                 continue
 
-            original = line.strip()
-            # Detect: = 'literal' or = "literal" (not parameters)
-            # Match equality with string literals that are not part of comments
-            if re.search(r"=\s*'[^'@][^']*'", original):
-                blockers.append(
-                    f"  Line {i}: Hardcoded string literal in WHERE clause. "
-                    f"Use a @-prefixed parameter instead."
-                )
-
-            # Detect: = <number> without a parameter (but allow = 0, = 1 for booleans like is_deleted = false)
-            numeric_match = re.search(r'=\s*(\d+)', original)
-            if numeric_match:
-                value = int(numeric_match.group(1))
-                # Allow 0 and 1 as common boolean/flag values, block others
-                if value > 1:
+            # Only flag WHERE at the outermost query (depth 0)
+            if paren_depth == 0:
+                original = line.strip()
+                if re.search(r"=\s*'[^'@][^']*'", original):
                     blockers.append(
-                        f"  Line {i}: Hardcoded numeric literal ({value}) in WHERE clause. "
+                        f"  Line {i}: Hardcoded string literal in WHERE clause. "
                         f"Use a @-prefixed parameter instead."
                     )
+                numeric_match = re.search(r'=\s*(\d+)', original)
+                if numeric_match:
+                    value = int(numeric_match.group(1))
+                    if value > 1:
+                        blockers.append(
+                            f"  Line {i}: Hardcoded numeric literal ({value}) in WHERE clause. "
+                            f"Use a @-prefixed parameter instead."
+                        )
+
+        # Clean up when exiting a nesting level
+        if paren_depth < 0:
+            paren_depth = 0
+        for d in list(in_where_at_depth):
+            if d > paren_depth:
+                del in_where_at_depth[d]
 
     return blockers
 
