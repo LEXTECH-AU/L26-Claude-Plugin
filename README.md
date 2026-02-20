@@ -103,9 +103,9 @@ Agents are autonomous review processes triggered by context. Claude will invoke 
 | Agent | Description | Trigger Conditions |
 |-------|-------------|--------------------|
 | `architecture-reviewer` | Reviews code for Clean Architecture compliance, layer dependency violations, and vertical slice completeness | After implementing features, during PR reviews, when asked to review architecture |
-| `security-auditor` | Scans for OWASP Top 10 vulnerabilities, injection risks, and authentication gaps | When reviewing security-sensitive code, before deployments |
-| `test-coverage-analyzer` | Analyzes test coverage gaps and suggests missing test scenarios | After writing tests, when test coverage is questioned |
-| `migration-validator` | Validates database migrations for safety, rollback support, and naming conventions | When creating or reviewing SQL migrations |
+| `lixi-validator` | Validates C# code against the LIXI DAS schema for type accuracy and enum consistency | When LIXI-related code is created or modified |
+| `sql-reviewer` | Reviews SQL files for quality, format, and security compliance | When SQL files are created or modified |
+| `test-coverage-reviewer` | Reviews test adequacy for handlers, validators, and repositories | After feature implementation or during PR reviews |
 
 ## Hooks
 

@@ -296,7 +296,7 @@ spec:
     - namePattern: {service-name}-dev
       images:
         - alias: svc
-          imageName: lextechsharedacr.azurecr.io/{service-name}:develop
+          imageName: lextechsharedacr.azurecr.io/{service-name}:main
           commonUpdateSettings:
             updateStrategy: digest
           manifestTargets:

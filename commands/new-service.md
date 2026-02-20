@@ -120,7 +120,7 @@ If the build fails, report the errors and stop. The user needs to fix before con
 gh repo create LEXTECH-AU/{GitHubRepoName} --private --source=. --push
 ```
 
-Set `develop` as the default branch and push initial code to both `main` and `develop`:
+Push initial code to `main`:
 
 ```bash
 git init
@@ -130,9 +130,6 @@ git commit -m "feat: Initial scaffold from L26-Skeleton-Microservice
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 git branch -M main
 gh repo create LEXTECH-AU/{GitHubRepoName} --private --source=. --push
-git checkout -b develop
-git push -u origin develop
-gh repo edit LEXTECH-AU/{GitHubRepoName} --default-branch develop
 ```
 
 ## Step 11: Provision Infrastructure
@@ -270,8 +267,8 @@ Create `environments/dev/services/{service-name}/image-updater.yaml` for ArgoCD 
 # =============================================================================
 # Image Updater - {Service Display Name} (Dev)
 # =============================================================================
-# Automatically deploys when the 'develop' tag digest changes in ACR.
-# CI pushes a mutable 'develop' tag on every develop branch build.
+# Automatically deploys when the 'main' tag digest changes in ACR.
+# CI pushes a mutable 'main' tag on every main branch build.
 # Image Updater detects digest changes and updates the ArgoCD app.
 # =============================================================================
 apiVersion: argocd-image-updater.argoproj.io/v1alpha1
@@ -287,7 +284,7 @@ spec:
     - namePattern: {service-name}-dev
       images:
         - alias: svc
-          imageName: lextechsharedacr.azurecr.io/{service-name}:develop
+          imageName: lextechsharedacr.azurecr.io/{service-name}:main
           commonUpdateSettings:
             updateStrategy: digest
           manifestTargets:
@@ -386,13 +383,13 @@ gh pr create \
 3. Terraform creates Azure resources (Key Vault, Identity, RBAC, etc.)
 4. CI post-apply step replaces `argocd-app.yaml` placeholders with real Terraform outputs and pushes a commit
 5. `microservices-infra-repo` ApplicationSet discovers the `argocd-app.yaml` and creates the ArgoCD Application
-6. Push a container image to ACR with the `develop` tag to trigger first deployment
+6. Push a container image to ACR with the `main` tag to trigger first deployment
 7. ArgoCD Image Updater detects the image and syncs
 
 ## Post-Merge Steps
 1. Wait for CI deploy to complete successfully
 2. Verify ArgoCD Application is created: `kubectl get applications -n argocd | grep {service-name}`
-3. Push container image: `docker push lextechsharedacr.azurecr.io/{service-name}:develop`
+3. Push container image: `docker push lextechsharedacr.azurecr.io/{service-name}:main`
 4. Verify pods are running: `kubectl get pods -n {service-name}`
 
 ## Test plan
@@ -431,7 +428,7 @@ After everything is complete, display:
    - [ ] Merge the infra PR
    - [ ] Wait for CI deploy to complete
    - [ ] Verify ArgoCD Application is created
-   - [ ] Push container image to ACR with `develop` tag
+   - [ ] Push container image to ACR with `main` tag
    - [ ] Verify pods are running in dev cluster
 5. **Reminder**: "Run `/lextech-dotnet:new-feature` to scaffold your first feature"
 6. **Note**: Staging/prod promotion is a separate step done later
