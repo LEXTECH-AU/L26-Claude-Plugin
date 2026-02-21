@@ -156,65 +156,25 @@ git checkout -b feat/add-{service-name}-infra
 
 Verify the clone succeeded and the branch was created.
 
-### 11c. Add Service Entry to services.yaml
-
-Edit `environments/services.yaml` to add the new service entry. Place it after the last existing service entry (before any commented-out templates/placeholders).
-
-Add a section header comment and the full service configuration using the feature flags chosen in Step 2. Follow the exact format of the existing entries (property-service, hub-service, skeleton-service):
-
-```yaml
-  # ---------------------------------------------------------------------------
-  # {Service Display Name}
-  # ---------------------------------------------------------------------------
-  {service-name}:
-    # Feature flags
-    create_database: {true|false}
-    create_service_bus_queue: {true|false}
-    create_storage_account: {true|false}
-    create_apim_api: {true|false}
-    create_app_registration: {true|false}
-    create_helm_values_configmap: true
-    create_argocd_application: false
-    jwt_validation_enabled: {true|false}
-    create_client_secret: {true|false}
-    sync_to_github: true
-
-    # Storage (only if create_storage_account: true)
-    # storage_containers:
-    #   - documents
-
-    # APIM
-    api_path: {service-name}
-    api_display_name: "{Service Display Name} API"
-
-    # GitHub / ArgoCD
-    github_repository: {GitHubRepoName}
-    helm_repo_url: "https://github.com/LEXTECH-AU/{GitHubRepoName}.git"
-    helm_target_revision: main
-    helm_path: helm
-    argocd_auto_sync: true
-```
-
-If storage containers were specified, uncomment and populate the `storage_containers` list.
-If webhook IPs were specified, add and populate the `webhook_allowed_ips` list.
-
-### 11d. Create Dev Service Directory
+### 11c. Create Dev Service Directory
 
 Only create the **dev** environment configuration. Staging and prod environments do not exist yet in the repo and are promoted separately later.
 
 #### Copy Template Files
 
-Copy only the two required files from the template directory (do NOT use `cp -r` -- the template directory contains legacy `.tmpl` files that should not be copied):
+Copy the three required files from the template directory:
 
 ```bash
-mkdir -p environments/dev/services/{service-name}
-cp environments/dev/services/_template/terragrunt.hcl environments/dev/services/{service-name}/terragrunt.hcl
-cp environments/dev/services/_template/argocd-app.yaml environments/dev/services/{service-name}/argocd-app.yaml
+mkdir -p environments/dev/services/{service-name}/data
+mkdir -p environments/dev/services/{service-name}/app
+cp environments/dev/services/_template/data/terragrunt.hcl environments/dev/services/{service-name}/data/terragrunt.hcl
+cp environments/dev/services/_template/app/terragrunt.hcl environments/dev/services/{service-name}/app/terragrunt.hcl
+cp environments/dev/services/_template/service.yaml environments/dev/services/{service-name}/service.yaml
 ```
 
-#### Configure terragrunt.hcl
+#### Configure data/terragrunt.hcl
 
-Edit `environments/dev/services/{service-name}/terragrunt.hcl`:
+Edit `environments/dev/services/{service-name}/data/terragrunt.hcl`:
 
 1. Replace all `__SERVICE_NAME__` with the actual service name
 2. Replace all `__SERVICE_REPO__` with the GitHub repo name
@@ -224,9 +184,34 @@ Edit `environments/dev/services/{service-name}/terragrunt.hcl`:
 
 ```hcl
 # =============================================================================
-# {Service Display Name} - Dev
+# {Service Display Name} - Dev (Data Layer)
 # =============================================================================
-# Creates: Key Vault, Managed Identity, RBAC, K8s resources{, Database}{, Storage}{, Queue}
+# Creates: Key Vault, Database, Storage (persistent resources)
+# =============================================================================
+```
+
+6. **Only uncomment feature flags that differ from defaults.** Only set flags like:
+   - `create_database = true` (if enabled)
+   - `create_service_bus_queue = true` (if enabled)
+   - `create_storage_account = true` (if enabled, plus `storage_containers` list)
+
+7. If storage containers were specified, uncomment and populate the `storage_containers` list
+
+#### Configure app/terragrunt.hcl
+
+Edit `environments/dev/services/{service-name}/app/terragrunt.hcl`:
+
+1. Replace all `__SERVICE_NAME__` with the actual service name
+2. Replace all `__SERVICE_REPO__` with the GitHub repo name
+3. Replace `__SERVICE_DISPLAY_NAME__` with the display name
+4. Remove the template onboarding checklist comment block at the top
+5. Add a proper header comment:
+
+```hcl
+# =============================================================================
+# {Service Display Name} - Dev (App Layer)
+# =============================================================================
+# Creates: Managed Identity, RBAC, K8s resources, APIM API (ephemeral resources)
 # =============================================================================
 ```
 
@@ -236,68 +221,29 @@ Edit `environments/dev/services/{service-name}/terragrunt.hcl`:
    - `create_client_secret = true`
 
    So you only need to uncomment/add flags like:
-   - `create_database = true` (if enabled -- template has this commented out)
-   - `create_service_bus_queue = true` (if enabled)
-   - `create_storage_account = true` (if enabled, plus `storage_containers` list)
    - `jwt_validation_enabled = true` (if enabled)
    - Any flag the user wants to set to `false` that `_service.hcl` defaults to `true`
 
-7. If storage containers were specified, uncomment and populate the `storage_containers` list
 8. If webhook IPs were specified, uncomment and populate the `webhook_allowed_ips` list
 
-#### Configure argocd-app.yaml
+#### Configure service.yaml
 
-Edit `environments/dev/services/{service-name}/argocd-app.yaml`:
+Edit `environments/dev/services/{service-name}/service.yaml`:
 
 1. Replace all `__SERVICE_NAME__` with the actual service name
+2. Replace `__SERVICE_REPO__` with the GitHub repo name (in `service_repo_url`)
+3. Leave `__PENDING__` sentinels for `client_id` and `key_vault_name` -- CI auto-replaces these after `terragrunt apply`
+4. If the service has its own `helm/` directory (Pattern B), keep `helm_pattern: service-repo` (default)
+5. If the service has NO helm directory (Pattern A), change to `helm_pattern: platform-only` and remove `service_repo_url` and `service_repo_revision`
+6. Uncomment and fill in `database:` block if `create_database: true`
+7. Uncomment and fill in `service_bus:` block if `create_service_bus_queue: true`
+8. Set `eso_enabled: true` (default) or `false` if the service doesn't use ESO
 
-**Do NOT replace the other placeholders** (`__CLIENT_ID__`, `__ACR_SERVER__`, `__INGRESS_HOST__`, `__APIM_IP__`, `__ESO_STORE__`). The CI deploy workflow has a post-apply step that automatically replaces these with real Terraform output values after the first `terragrunt apply`.
-
-The argocd-app.yaml template supports two patterns (documented in comments):
-- **Pattern A -- Platform-only**: Service has no Helm chart of its own. This is the default.
-- **Pattern B -- External repo**: Service has its own `helm/` directory. Uncomment the `$service` ref source and the `$service/helm/values.yaml` valueFile.
-
-If the service repo has a `helm/` directory, switch to Pattern B by uncommenting the relevant sections.
-
-#### Create image-updater.yaml
-
-Create `environments/dev/services/{service-name}/image-updater.yaml` for ArgoCD Image Updater. This enables automatic deployment when a new container image is pushed to ACR:
-
-```yaml
-# =============================================================================
-# Image Updater - {Service Display Name} (Dev)
-# =============================================================================
-# Automatically deploys when the 'main' tag digest changes in ACR.
-# CI pushes a mutable 'main' tag on every main branch build.
-# Image Updater detects digest changes and updates the ArgoCD app.
-# =============================================================================
-apiVersion: argocd-image-updater.argoproj.io/v1alpha1
-kind: ImageUpdater
-metadata:
-  name: {service-name}-dev
-  namespace: argocd
-spec:
-  namespace: argocd
-  writeBackConfig:
-    method: argocd
-  applicationRefs:
-    - namePattern: {service-name}-dev
-      images:
-        - alias: svc
-          imageName: lextechsharedacr.azurecr.io/{service-name}:main
-          commonUpdateSettings:
-            updateStrategy: digest
-          manifestTargets:
-            helm:
-              name: image.repository
-              tag: image.tag
-```
-
-### 11e. Update Deploy Workflow
+### 11d. Update Deploy Workflow
 
 Edit `.github/workflows/deploy.yml` to add the new service to the manual dispatch layer choices.
 
-Find the `layer` input under `workflow_dispatch.inputs` and add `services/{service-name}` to the `options` list, placing it **alphabetically** among the existing service entries:
+Find the `layer` input under `workflow_dispatch.inputs` and add BOTH `services/{service-name}/data` and `services/{service-name}/app` to the `options` list, placing them **alphabetically** among the existing service entries:
 
 ```yaml
       layer:
@@ -312,16 +258,19 @@ Find the `layer` input under `workflow_dispatch.inputs` and add `services/{servi
           - data
           - compute
           - gateway
-          - services/{service-name}      # <-- ADD THIS (alphabetical)
-          - services/property-service
-          - services/skeleton-service
+          - services/{service-name}/data   # <-- ADD THIS (alphabetical)
+          - services/{service-name}/app    # <-- ADD THIS (alphabetical)
+          - services/property-service/data
+          - services/property-service/app
+          - services/skeleton-service/data
+          - services/skeleton-service/app
           - acr
           - github-actions-identity
 ```
 
-**Note**: This is the only change needed in the deploy workflow. The workflow uses `terragrunt run-all` with filesystem auto-discovery for push-to-main deploys, so creating the service directory (Step 11d) is what enables automatic deployment. The options list is only for manual `workflow_dispatch` deploys.
+**Note**: This is the only change needed in the deploy workflow. The workflow uses `terragrunt run-all` with filesystem auto-discovery for push-to-main deploys, so creating the service directory (Step 11c) is what enables automatic deployment. The options list is only for manual `workflow_dispatch` deploys.
 
-### 11f. Commit and Push
+### 11e. Commit and Push
 
 Stage all changes, create a commit, and push:
 
@@ -329,11 +278,10 @@ Stage all changes, create a commit, and push:
 git add -A
 git commit -m "feat: Add {service-name} infrastructure
 
-- Add {service-name} to services.yaml with feature flags
-- Create dev service configuration from template
-- GitOps ArgoCD via argocd-app.yaml (CI auto-populates placeholders)
-- Add image-updater.yaml for auto-deploy on image push
-- Add deploy workflow layer option
+- Create dev service data/app configuration from template
+- Add service.yaml for ApplicationSet discovery
+- CI auto-populates __PENDING__ sentinels after terragrunt apply
+- Add deploy workflow layer options
 
 Services enabled: {list enabled services}
 
@@ -342,7 +290,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 git push -u origin feat/add-{service-name}-infra
 ```
 
-### 11g. Create Pull Request
+### 11f. Create Pull Request
 
 Create a PR in the infra repo using `gh`:
 
@@ -353,8 +301,7 @@ gh pr create \
   --body "$(cat <<'EOF'
 ## Summary
 - Add **{service-name}** microservice infrastructure configuration (dev environment)
-- GitOps ArgoCD pattern: `argocd-app.yaml` with CI-managed placeholder replacement
-- ArgoCD Image Updater configured for auto-deploy on image push
+- ApplicationSet-driven GitOps: `service.yaml` with CI-managed `__PENDING__` sentinel replacement
 - Enable: {list of enabled Azure services}
 
 ### Service Configuration
@@ -371,18 +318,17 @@ gh pr create \
 | k6 Client Secret | {yes/no} |
 
 ### Files Changed
-- `environments/services.yaml` -- Added service entry
-- `environments/dev/services/{service-name}/terragrunt.hcl` -- Dev Terragrunt configuration
-- `environments/dev/services/{service-name}/argocd-app.yaml` -- ArgoCD Application manifest
-- `environments/dev/services/{service-name}/image-updater.yaml` -- ArgoCD Image Updater
-- `.github/workflows/deploy.yml` -- Added deploy layer option
+- `environments/dev/services/{service-name}/data/terragrunt.hcl` -- Data layer Terragrunt configuration (persistent resources)
+- `environments/dev/services/{service-name}/app/terragrunt.hcl` -- App layer Terragrunt configuration (ephemeral resources)
+- `environments/dev/services/{service-name}/service.yaml` -- ArgoCD ApplicationSet service configuration
+- `.github/workflows/deploy.yml` -- Added deploy layer options
 
 ### How It Works
 1. CI runs validate + plan on this PR
 2. After merge, push-to-main triggers `terragrunt apply` for dev
 3. Terraform creates Azure resources (Key Vault, Identity, RBAC, etc.)
-4. CI post-apply step replaces `argocd-app.yaml` placeholders with real Terraform outputs and pushes a commit
-5. `microservices-infra-repo` ApplicationSet discovers the `argocd-app.yaml` and creates the ArgoCD Application
+4. CI post-apply step replaces `__PENDING__` sentinels in `service.yaml` with real Terraform outputs and pushes a commit
+5. ArgoCD ApplicationSet discovers `service.yaml` and generates the Application
 6. Push a container image to ACR with the `main` tag to trigger first deployment
 7. ArgoCD Image Updater detects the image and syncs
 
@@ -399,7 +345,7 @@ gh pr create \
 - [ ] CI runs `terragrunt plan` for dev -- review plan output
 - [ ] Verify plan shows only create operations (no unexpected changes)
 - [ ] After merge: verify dev auto-deploy succeeds
-- [ ] After merge: verify `argocd-app.yaml` placeholders are replaced by CI commit
+- [ ] After merge: verify `__PENDING__` sentinels in `service.yaml` are replaced by CI commit
 - [ ] After merge: verify ArgoCD Application is discovered and syncs
 
 Generated with [Claude Code](https://claude.com/claude-code)
@@ -407,7 +353,7 @@ EOF
 )"
 ```
 
-### 11h. Clean Up
+### 11g. Clean Up
 
 Remove the temporary infra clone directory:
 
@@ -420,7 +366,7 @@ rm -rf "$INFRA_DIR"
 After everything is complete, display:
 
 1. **GitHub repo URL**: `https://github.com/LEXTECH-AU/{GitHubRepoName}`
-2. **Infra PR URL**: The PR created in Step 11g
+2. **Infra PR URL**: The PR created in Step 11f
 3. **Service configuration table**: All the settings from Step 2
 4. **Post-merge checklist**:
    - [ ] CI validates and plans the infra PR
@@ -437,13 +383,10 @@ After everything is complete, display:
 
 - **Never modify existing services** -- only add the new service entry.
 - **Dev environment only** -- staging and prod directories do not exist yet. They are promoted separately after the service is running in dev.
-- **ArgoCD is GitOps-managed** -- set `create_argocd_application: false` in services.yaml. Keep the `argocd-app.yaml` file with placeholders. The CI post-apply step auto-replaces placeholders with real Terraform outputs. The `microservices-infra-repo` ApplicationSet auto-discovers `argocd-app.yaml` files.
-- **Only replace `__SERVICE_NAME__` in argocd-app.yaml** -- leave `__CLIENT_ID__`, `__ACR_SERVER__`, `__INGRESS_HOST__`, `__APIM_IP__`, `__ESO_STORE__` for CI to handle.
-- **Do NOT use `cp -r` on the template directory** -- it contains legacy `.tmpl` files. Copy only `terragrunt.hcl` and `argocd-app.yaml`.
-- **Create `image-updater.yaml`** -- required for auto-deploy on image push.
+- **Leave `__PENDING__` sentinels in service.yaml** -- CI auto-replaces `client_id` and `key_vault_name` after `terragrunt apply`.
+- **Copy individual files from the template directory** -- `data/terragrunt.hcl`, `app/terragrunt.hcl`, and `service.yaml`. Do not use `cp -r`.
 - **Minimal terragrunt.hcl overrides** -- `_service.hcl` auto-wires 31+ variables from platform layer dependencies. Only set flags that differ from `_service.hcl` defaults (`create_apim_api=true`, `create_app_registration=true`, `create_client_secret=true`).
-- **Deploy workflow** -- only add to the `options` dropdown list. The workflow auto-discovers services from the filesystem for push-to-main deploys.
-- **services.yaml** is the single source of truth -- the entry here must match the terragrunt.hcl inputs.
+- **Deploy workflow** -- add BOTH `services/{service-name}/data` and `services/{service-name}/app` to the `options` dropdown list. The workflow auto-discovers services from the filesystem for push-to-main deploys.
 - **Do not run `terragrunt plan` or `terragrunt apply`** -- that happens via CI after the PR is merged.
 - **Clean up**: remove all temporary clone directories after completion.
 - **Build must pass** -- if the build fails in Step 9, stop and let the user fix before continuing.
